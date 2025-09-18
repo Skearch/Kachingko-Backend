@@ -1,11 +1,13 @@
 const BaseController = require('./BaseController');
 const Account = require('../models/Account');
 const TwilioService = require('../utils/TwilioService');
+const JwtService = require('../utils/JwtService');
 
 class AccountController extends BaseController {
     constructor() {
         super();
         this.twilioService = new TwilioService();
+        this.jwtService = new JwtService();
     }
 
     async checkAccountExists(phoneNumber) {
@@ -85,9 +87,17 @@ class AccountController extends BaseController {
                 throw new Error('Invalid PIN');
             }
 
+            const token = this.jwtService.generateToken({
+                phoneNumber: account.phoneNumber,
+                accountId: account.id,
+                smsVerified: account.smsVerified,
+                emailVerified: account.emailVerified,
+                fullyVerified: account.fullyVerified
+            });
+
             return {
                 account: account.toSafeJSON(),
-                verificationStatus: account.getVerificationStatus(),
+                token,
                 message: 'Login successful'
             };
         } catch (error) {
@@ -138,6 +148,34 @@ class AccountController extends BaseController {
         }
     }
 
+    async createAccount({ phoneNumber, pin }) {
+        try {
+            const existingAccount = await Account.findByPhoneNumber(phoneNumber);
+            if (existingAccount) {
+                throw new Error('Account already exists with this phone number');
+            }
+
+            const newAccount = await Account.createAccount({
+                phoneNumber,
+                pin,
+                smsVerified: true
+            });
+
+            const token = this.jwtService.generateToken({
+                phoneNumber: newAccount.phoneNumber,
+                accountId: newAccount.id,
+                smsVerified: newAccount.smsVerified
+            });
+
+            return {
+                account: newAccount.toSafeJSON(),
+                token,
+            };
+        } catch (error) {
+            throw this.handleError(error, 'Failed to create account');
+        }
+    }
+
     async verifyEmail(phoneNumber, code) {
         try {
             const account = await Account.findByPhoneNumber(phoneNumber);
@@ -165,6 +203,21 @@ class AccountController extends BaseController {
             }
         } catch (error) {
             throw this.handleError(error, 'Failed to verify email');
+        }
+    }
+
+    async getProfile(phoneNumber) {
+        try {
+            this.logInfo('Fetching profile for', { phoneNumber });
+            const account = await Account.findByPhoneNumber(phoneNumber);
+            if (!account) {
+                throw new Error('Account not found');
+            }
+            return {
+                account: account.toSafeJSON()
+            };
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get profile');
         }
     }
 }

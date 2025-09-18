@@ -1,6 +1,7 @@
 const BaseRouter = require('./BaseRouter');
 const AccountController = require('../controllers/AccountController');
 const ValidationMiddleware = require('../middleware/ValidationMiddleware');
+const AuthMiddleware = require('../middleware/AuthMiddleware');
 
 class AccountRoutes extends BaseRouter {
     constructor() {
@@ -35,17 +36,24 @@ class AccountRoutes extends BaseRouter {
             this.asyncHandler(this.loginWithPin.bind(this))
         );
 
+        this.router.get('/profile',
+            AuthMiddleware.authenticate,
+            this.asyncHandler(this.getProfile.bind(this))
+        );
+
         this.router.post('/add-email',
+            AuthMiddleware.authenticate,
             ValidationMiddleware.validateAddEmail,
             this.asyncHandler(this.addEmail.bind(this))
         );
 
         this.router.post('/send-email-verification',
-            ValidationMiddleware.validatePhoneNumber,
+            AuthMiddleware.authenticate,
             this.asyncHandler(this.sendEmailVerification.bind(this))
         );
 
         this.router.post('/verify-email',
+            AuthMiddleware.authenticate,
             ValidationMiddleware.validateEmailVerification,
             this.asyncHandler(this.verifyEmail.bind(this))
         );
@@ -69,8 +77,8 @@ class AccountRoutes extends BaseRouter {
     }
 
     async createAccount(req, res) {
-        const account = await this.accountController.createAccount(req.body);
-        res.json(this.successResponse(account, 'Account created successfully'));
+        const result = await this.accountController.createAccount(req.body);
+        res.json(this.successResponse(result, 'Account created successfully'));
     }
 
     async loginWithPin(req, res) {
@@ -79,21 +87,25 @@ class AccountRoutes extends BaseRouter {
         res.json(this.successResponse(result, 'Login successful'));
     }
 
+    async getProfile(req, res) {
+        const result = await this.accountController.getProfile(req.user.phoneNumber);
+        res.json(this.successResponse(result, 'Profile retrieved successfully'));
+    }
+
     async addEmail(req, res) {
-        const { phoneNumber, email } = req.body;
-        const result = await this.accountController.addEmail(phoneNumber, email);
+        const { email } = req.body;
+        const result = await this.accountController.addEmail(req.user.phoneNumber, email);
         res.json(this.successResponse(result, 'Email added successfully'));
     }
 
     async sendEmailVerification(req, res) {
-        const { phoneNumber } = req.body;
-        const result = await this.accountController.sendEmailVerification(phoneNumber);
+        const result = await this.accountController.sendEmailVerification(req.user.phoneNumber);
         res.json(this.successResponse(result, 'Email verification sent'));
     }
 
     async verifyEmail(req, res) {
-        const { phoneNumber, code } = req.body;
-        const verified = await this.accountController.verifyEmail(phoneNumber, code);
+        const { code } = req.body;
+        const verified = await this.accountController.verifyEmail(req.user.phoneNumber, code);
         res.json(this.successResponse({ verified }, 'Email verification completed'));
     }
 }

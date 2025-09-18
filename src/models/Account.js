@@ -161,15 +161,6 @@ class Account extends Model {
         return this.save();
     }
 
-    getVerificationStatus() {
-        return {
-            smsVerified: this.smsVerified,
-            emailVerified: this.emailVerified,
-            fullyVerified: this.fullyVerified,
-            kycStatus: this.kycStatus
-        };
-    }
-
     toSafeJSON() {
         const { pin, ...safeData } = this.toJSON();
         return safeData;
