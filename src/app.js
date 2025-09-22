@@ -53,8 +53,7 @@ class App {
         this.app.get('/', (req, res) => {
             res.json({
                 message: 'Backend is running!',
-                version: '1.0.0',
-                endpoints: ['/api/accounts']
+                version: '1.0.0'
             });
         });
     }

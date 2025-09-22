@@ -206,6 +206,90 @@ class AccountController extends BaseController {
         }
     }
 
+    async requestEmailChange(phoneNumber, newEmail) {
+        try {
+            const account = await Account.findByPhoneNumber(phoneNumber);
+            if (!account) {
+                throw new Error('Account not found');
+            }
+
+            if (account.email === newEmail) {
+                throw new Error('New email cannot be the same as current email');
+            }
+
+            account.pendingEmail = newEmail;
+            account.emailChangeVerificationStep = 'sms_pending';
+            await account.save();
+
+            return { message: 'Email change requested. SMS verification required first.' };
+        } catch (error) {
+            throw this.handleError(error, 'Failed to request email change');
+        }
+    }
+
+    async verifyEmailChangeSms(phoneNumber, code) {
+        try {
+            const account = await Account.findByPhoneNumber(phoneNumber);
+            if (!account) {
+                throw new Error('Account not found');
+            }
+
+            if (account.emailChangeVerificationStep !== 'sms_pending') {
+                throw new Error('No email change request pending SMS verification');
+            }
+
+            const verification = await this.twilioService.checkVerification(phoneNumber, code);
+            if (verification.status !== 'approved') {
+                throw new Error('Invalid SMS verification code');
+            }
+
+            account.emailChangeVerificationStep = 'email_pending';
+            await account.save();
+
+            await this.twilioService.sendEmail(account.pendingEmail);
+            account.lastEmailVerificationSent = new Date();
+            await account.save();
+
+            return { 
+                message: 'SMS verified successfully. Email verification code sent to new email address.' 
+            };
+        } catch (error) {
+            throw this.handleError(error, 'Failed to verify SMS for email change');
+        }
+    }
+
+    async verifyEmailChangeNewEmail(phoneNumber, code) {
+        try {
+            const account = await Account.findByPhoneNumber(phoneNumber);
+            if (!account) {
+                throw new Error('Account not found');
+            }
+
+            if (account.emailChangeVerificationStep !== 'email_pending') {
+                throw new Error('Email verification not ready. Complete SMS verification first.');
+            }
+
+            const verification = await this.twilioService.checkEmailVerification(account.pendingEmail, code);
+            if (verification.status !== 'approved') {
+                throw new Error('Invalid email verification code');
+            }
+
+            account.email = account.pendingEmail;
+            account.pendingEmail = null;
+            account.emailVerified = true;
+            account.emailChangeVerificationStep = 'none';
+            account.emailVerificationAttempts = 0;
+            await account.save();
+
+            return { 
+                message: 'Email changed successfully!',
+                newEmail: account.email 
+            };
+        } catch (error) {
+            throw this.handleError(error, 'Failed to verify new email for email change');
+        }
+    }
+
     async getProfile(phoneNumber) {
         try {
             this.logInfo('Fetching profile for', { phoneNumber });

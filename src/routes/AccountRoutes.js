@@ -11,6 +11,24 @@ class AccountRoutes extends BaseRouter {
     }
 
     setupRoutes() {
+        this.router.post('/request-email-change',
+            AuthMiddleware.authenticate,
+            ValidationMiddleware.validateAddEmail,
+            this.asyncHandler(this.requestEmailChange.bind(this))
+        );
+
+        this.router.post('/verify-email-change-sms',
+            AuthMiddleware.authenticate,
+            ValidationMiddleware.validateEmailVerification,
+            this.asyncHandler(this.verifyEmailChangeSms.bind(this))
+        );
+
+        this.router.post('/verify-email-change-email',
+            AuthMiddleware.authenticate,
+            ValidationMiddleware.validateEmailVerification,
+            this.asyncHandler(this.verifyEmailChangeEmail.bind(this))
+        );
+
         this.router.get('/exists/:phone',
             ValidationMiddleware.validatePhoneNumber,
             this.asyncHandler(this.checkAccountExists.bind(this))
@@ -107,6 +125,24 @@ class AccountRoutes extends BaseRouter {
         const { code } = req.body;
         const verified = await this.accountController.verifyEmail(req.user.phoneNumber, code);
         res.json(this.successResponse({ verified }, 'Email verification completed'));
+    }
+
+    async requestEmailChange(req, res) {
+        const { email } = req.body;
+        const result = await this.accountController.requestEmailChange(req.user.phoneNumber, email);
+        res.json(this.successResponse(result, 'Email change request initiated'));
+    }
+
+    async verifyEmailChangeSms(req, res) {
+        const { code } = req.body;
+        const result = await this.accountController.verifyEmailChangeSms(req.user.phoneNumber, code);
+        res.json(this.successResponse(result, 'SMS verification completed'));
+    }
+
+    async verifyEmailChangeEmail(req, res) {
+        const { code } = req.body;
+        const result = await this.accountController.verifyEmailChangeNewEmail(req.user.phoneNumber, code);
+        res.json(this.successResponse(result, 'Email change completed'));
     }
 }
 

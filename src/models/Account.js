@@ -44,6 +44,20 @@ class Account extends Model {
                     isEmail: true
                 }
             },
+            pendingEmail: {
+                type: DataTypes.STRING,
+                allowNull: true,
+                validate: {
+                    isEmail: true
+                }
+            },
+            emailChangeVerificationStep: {
+                type: DataTypes.STRING,
+                defaultValue: 'none',
+                validate: {
+                    isIn: [['none', 'sms_pending', 'email_pending', 'completed']]
+                }
+            },
             emailVerified: {
                 type: DataTypes.BOOLEAN,
                 defaultValue: false
@@ -95,11 +109,11 @@ class Account extends Model {
         if (cleaned.startsWith('0')) {
             return '+63' + cleaned.substring(1);
         }
-        
+
         if (cleaned.startsWith('63')) {
             return '+' + cleaned;
         }
-        
+
         if (!cleaned.startsWith('+63')) {
             return '+63' + cleaned;
         }
@@ -109,7 +123,7 @@ class Account extends Model {
 
     canSendVerification() {
         if (!this.lastVerificationSent) return true;
-        
+
         const now = new Date();
         const oneMinute = 60 * 1000;
         return (now - this.lastVerificationSent) > oneMinute;
@@ -117,7 +131,7 @@ class Account extends Model {
 
     canSendEmailVerification() {
         if (!this.lastEmailVerificationSent) return true;
-        
+
         const now = new Date();
         const oneMinute = 60 * 1000;
         return (now - this.lastEmailVerificationSent) > oneMinute;
