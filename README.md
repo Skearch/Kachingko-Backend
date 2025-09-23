@@ -4,9 +4,12 @@
 - Email verification with OTP via Brevo SMTP (Nodemailer)
 - PIN-based authentication with JWT tokens
 - Secure email change process with dual verification
+- Duplicate request protection middleware
 - SQLite database with Sequelize ORM
 - Comprehensive logging system
 - Robust error handling and validation
+- Memory-based email code management with cleanup
+- Automatic expired code cleanup every 10 minutes
 
 ## Quick Start
 
@@ -48,13 +51,28 @@ LOG_LOCALE=en-PH
 LOG_TIMEZONE=Asia/Manila
 ```
 
-**Notes:**
-- `SMTP_USER` is your Brevo SMTP login (not your sender email).
-- `SMTP_PASS` is your Brevo SMTP key (from the Brevo dashboard).
-- `SMTP_FROM` should be a verified sender email in Brevo, e.g. `Kachingko <skearch.dev@gmail.com>`.
-
 ## Phone Number Format
 All formats are normalized to `+639XXXXXXXXX` internally.
+
+## Security Features
+
+### Duplicate Request Protection
+All sensitive endpoints are protected against duplicate requests to prevent race conditions:
+- **Email verification processes**: Prevents same code from being processed simultaneously
+- **Account creation**: Prevents duplicate account creation attempts
+- **Login attempts**: Rate limits rapid login attempts
+- **SMS/Email sending**: Prevents spam verification messages
+
+### Rate Limiting
+- **SMS verification**: 1 request per minute per phone number
+- **Email verification**: 1 request per minute per email
+- **Failed verification attempts**: 5 attempts before code reset required
+- **Duplicate requests**: Returns HTTP 429 with clear error message
+
+### Memory Management
+- **Email codes**: Stored in memory with 5-minute expiration
+- **Automatic cleanup**: Expired codes removed every 10 minutes
+- **Attempt limiting**: Maximum 3 attempts per email code
 
 ## Complete API Flow
 
@@ -177,7 +195,6 @@ Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
-  "phoneNumber": "+639123456789",
   "email": "user@example.com"
 }
 ```
@@ -195,7 +212,6 @@ Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
-  "phoneNumber": "+639123456789",
   "code": "123456"
 }
 ```
@@ -228,7 +244,6 @@ Content-Type: application/json
 #### Step 2: Send SMS Verification for Email Change
 ```http
 POST /api/accounts/send-verification
-Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
@@ -243,7 +258,6 @@ Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
-  "phoneNumber": "+639123456789",
   "code": "123456"
 }
 ```
@@ -265,7 +279,6 @@ Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
-  "phoneNumber": "+639123456789",
   "code": "789012"
 }
 ```
@@ -294,60 +307,113 @@ Content-Type: application/json
 - **Description:** Send SMS OTP verification code
 - **Required:** `phoneNumber` in request body
 - **Rate Limited:** 1 request per minute per phone number
+- **Duplicate Protection:** Prevents spam SMS sending
 
 **`POST /api/accounts/verify-code`**
 - **Description:** Verify SMS OTP code
 - **Required:** `phoneNumber`, `code` in request body
+- **Duplicate Protection:** Prevents same code from being processed twice
 
 **`POST /api/accounts/create`**
 - **Description:** Create a new account after SMS verification
 - **Required:** `phoneNumber`, `pin` (6 digits) in request body
 - **Returns:** Account data and JWT token
+- **Duplicate Protection:** Prevents duplicate account creation
 
 **`POST /api/accounts/login`**
 - **Description:** Login with phone number and PIN
 - **Required:** `phoneNumber`, `pin` (6 digits) in request body
 - **Returns:** Account data and JWT token
+- **Duplicate Protection:** Rate limits rapid login attempts
 
 ### Protected Endpoints (JWT Authentication Required)
 
 All protected endpoints require `Authorization: Bearer <jwt_token>` header.
 
-**`GET /api/accounts/profile`**
+**`GET /api/accounts/profile`** 
 - **Description:** Get authenticated user's profile information
 - **Required:** JWT token only
 - **Returns:** Complete account information
 
 **`POST /api/accounts/add-email`**
 - **Description:** Add or update email address for account
-- **Required:** `phoneNumber`, `email` in request body
-- **Note:** Sets email as unverified, requires verification
+- **Required:** `email` in request body
+- **Note:** Phone number extracted from JWT token
+- **Duplicate Protection:** Prevents duplicate email addition requests
 
 **`POST /api/accounts/send-email-verification`**
 - **Description:** Send email OTP verification code to account's email
 - **Required:** JWT token only
 - **Rate Limited:** 1 request per minute per email
 - **Prerequisites:** Account must have email address
+- **Duplicate Protection:** Prevents spam email sending
 
 **`POST /api/accounts/verify-email`**
 - **Description:** Verify email OTP code
-- **Required:** `phoneNumber`, `code` in request body
+- **Required:** `code` in request body
 - **Note:** Marks email as verified on success
+- **Duplicate Protection:** Prevents same code from being processed twice
 
 **`POST /api/accounts/request-email-change`**
 - **Description:** Initiate secure email change process
-- **Required:** `phoneNumber`, `email` in request body
+- **Required:** `email` in request body
 - **Returns:** Instructions for next verification step
+- **Duplicate Protection:** Prevents duplicate email change requests
 
 **`POST /api/accounts/verify-email-change-sms`**
 - **Description:** Verify SMS code for email change process
-- **Required:** `phoneNumber`, `code` in request body
+- **Required:** `code` in request body
 - **Note:** Must complete this before email verification step
+- **Duplicate Protection:** Prevents duplicate SMS verification attempts
 
 **`POST /api/accounts/verify-email-change-email`**
 - **Description:** Complete email change by verifying new email code
-- **Required:** `phoneNumber`, `code` in request body
+- **Required:** `code` in request body
 - **Note:** Final step - updates email address on success
+- **Duplicate Protection:** Prevents race conditions during final step
+
+## Error Handling
+
+### Duplicate Request Response
+When duplicate requests are detected, you'll receive:
+
+```json
+{
+  "success": false,
+  "message": "Duplicate request detected. Please wait."
+}
+```
+**HTTP Status:** `429 Too Many Requests`
+
+### Common Error Responses
+
+**Authentication Failed:**
+```json
+{
+  "success": false,
+  "message": "Authentication failed"
+}
+```
+**HTTP Status:** `401 Unauthorized`
+
+**Validation Error:**
+```json
+{
+  "success": false,
+  "message": "Validation error",
+  "errors": ["PIN must be exactly 6 digits"]
+}
+```
+**HTTP Status:** `400 Bad Request`
+
+**Account Already Exists:**
+```json
+{
+  "success": false,
+  "message": "Account already exists with this phone number"
+}
+```
+**HTTP Status:** `409 Conflict`
 
 ## Authentication
 
@@ -377,11 +443,6 @@ All API responses follow this consistent format:
   "error": "string | null (only on errors)"
 }
 ```
-
-## Rate Limiting
-- SMS verification: 1 request per minute per phone number
-- Email verification: 1 request per minute per email
-- Failed verification attempts: 5 attempts before code reset required
 
 ## Development
 

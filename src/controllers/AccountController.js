@@ -3,6 +3,7 @@ const Account = require('../models/Account');
 const TwilioService = require('../utils/TwilioService');
 const JwtService = require('../utils/JwtService');
 
+
 class AccountController extends BaseController {
     constructor() {
         super();
@@ -265,6 +266,14 @@ class AccountController extends BaseController {
                 throw new Error('Account not found');
             }
 
+            if (account.emailChangeVerificationStep === 'completed' || 
+                account.emailChangeVerificationStep === 'none') {
+                return { 
+                    message: 'Email change already completed!',
+                    newEmail: account.email 
+                };
+            }
+
             if (account.emailChangeVerificationStep !== 'email_pending') {
                 throw new Error('Email verification not ready. Complete SMS verification first.');
             }
@@ -273,6 +282,9 @@ class AccountController extends BaseController {
             if (verification.status !== 'approved') {
                 throw new Error('Invalid email verification code');
             }
+
+            account.emailChangeVerificationStep = 'completed';
+            await account.save();
 
             account.email = account.pendingEmail;
             account.pendingEmail = null;

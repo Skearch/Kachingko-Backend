@@ -2,6 +2,7 @@ const BaseRouter = require('./BaseRouter');
 const AccountController = require('../controllers/AccountController');
 const ValidationMiddleware = require('../middleware/ValidationMiddleware');
 const AuthMiddleware = require('../middleware/AuthMiddleware');
+const DeduplicationMiddleware = require('../middleware/DeduplicationMiddleware');
 
 class AccountRoutes extends BaseRouter {
     constructor() {
@@ -13,20 +14,67 @@ class AccountRoutes extends BaseRouter {
     setupRoutes() {
         this.router.post('/request-email-change',
             AuthMiddleware.authenticate,
+            DeduplicationMiddleware.deduplicate((req) => `email-change-request-${req.user.phoneNumber}`),
             ValidationMiddleware.validateAddEmail,
             this.asyncHandler(this.requestEmailChange.bind(this))
         );
 
         this.router.post('/verify-email-change-sms',
             AuthMiddleware.authenticate,
+            DeduplicationMiddleware.deduplicate((req) => `sms-verify-${req.user.phoneNumber}-${req.body.code}`),
             ValidationMiddleware.validateEmailVerification,
             this.asyncHandler(this.verifyEmailChangeSms.bind(this))
         );
 
         this.router.post('/verify-email-change-email',
             AuthMiddleware.authenticate,
+            DeduplicationMiddleware.deduplicate((req) => `email-verify-${req.user.phoneNumber}-${req.body.code}`),
             ValidationMiddleware.validateEmailVerification,
             this.asyncHandler(this.verifyEmailChangeEmail.bind(this))
+        );
+
+        this.router.post('/create',
+            DeduplicationMiddleware.deduplicate((req) => `create-account-${req.body.phoneNumber}`),
+            ValidationMiddleware.validateCreateAccount,
+            this.asyncHandler(this.createAccount.bind(this))
+        );
+
+        this.router.post('/login',
+            DeduplicationMiddleware.deduplicate((req) => `login-${req.body.phoneNumber}`),
+            ValidationMiddleware.validateLoginPin,
+            this.asyncHandler(this.loginWithPin.bind(this))
+        );
+
+        this.router.post('/send-email-verification',
+            AuthMiddleware.authenticate,
+            DeduplicationMiddleware.deduplicate((req) => `send-email-verify-${req.user.phoneNumber}`),
+            this.asyncHandler(this.sendEmailVerification.bind(this))
+        );
+
+        this.router.post('/verify-email',
+            AuthMiddleware.authenticate,
+            DeduplicationMiddleware.deduplicate((req) => `email-verify-${req.user.phoneNumber}-${req.body.code}`),
+            ValidationMiddleware.validateEmailVerification,
+            this.asyncHandler(this.verifyEmail.bind(this))
+        );
+
+        this.router.post('/send-verification',
+            DeduplicationMiddleware.deduplicate((req) => `send-sms-${req.body.phoneNumber}`),
+            ValidationMiddleware.validatePhoneNumber,
+            this.asyncHandler(this.sendVerificationCode.bind(this))
+        );
+
+        this.router.post('/verify-code',
+            DeduplicationMiddleware.deduplicate((req) => `verify-sms-${req.body.phoneNumber}-${req.body.code}`),
+            ValidationMiddleware.validatePhoneNumber,
+            this.asyncHandler(this.verifyCode.bind(this))
+        );
+
+        this.router.post('/add-email',
+            AuthMiddleware.authenticate,
+            DeduplicationMiddleware.deduplicate((req) => `add-email-${req.user.phoneNumber}`),
+            ValidationMiddleware.validateAddEmail,
+            this.asyncHandler(this.addEmail.bind(this))
         );
 
         this.router.get('/exists/:phone',
@@ -34,46 +82,9 @@ class AccountRoutes extends BaseRouter {
             this.asyncHandler(this.checkAccountExists.bind(this))
         );
 
-        this.router.post('/send-verification',
-            ValidationMiddleware.validatePhoneNumber,
-            this.asyncHandler(this.sendVerificationCode.bind(this))
-        );
-
-        this.router.post('/verify-code',
-            ValidationMiddleware.validatePhoneNumber,
-            this.asyncHandler(this.verifyCode.bind(this))
-        );
-
-        this.router.post('/create',
-            ValidationMiddleware.validateCreateAccount,
-            this.asyncHandler(this.createAccount.bind(this))
-        );
-
-        this.router.post('/login',
-            ValidationMiddleware.validateLoginPin,
-            this.asyncHandler(this.loginWithPin.bind(this))
-        );
-
         this.router.get('/profile',
             AuthMiddleware.authenticate,
             this.asyncHandler(this.getProfile.bind(this))
-        );
-
-        this.router.post('/add-email',
-            AuthMiddleware.authenticate,
-            ValidationMiddleware.validateAddEmail,
-            this.asyncHandler(this.addEmail.bind(this))
-        );
-
-        this.router.post('/send-email-verification',
-            AuthMiddleware.authenticate,
-            this.asyncHandler(this.sendEmailVerification.bind(this))
-        );
-
-        this.router.post('/verify-email',
-            AuthMiddleware.authenticate,
-            ValidationMiddleware.validateEmailVerification,
-            this.asyncHandler(this.verifyEmail.bind(this))
         );
     }
 
