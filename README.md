@@ -1,7 +1,7 @@
 # Features
 - Philippine phone number validation and normalization
 - SMS OTP verification via Twilio
-- Email verification with OTP
+- Email verification with OTP via Brevo (formerly Sendinblue)
 - PIN-based authentication with JWT tokens
 - Secure email change process with dual verification
 - SQLite database with Sequelize ORM
@@ -25,10 +25,15 @@ Create a `.env` file with the following variables:
 PORT=3000
 NODE_ENV=development
 
-# Twilio Configuration (Required)
+# Twilio Configuration (Required for SMS)
 TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_VERIFY_SERVICE_SID=your_verify_service_sid
+
+# Brevo Configuration (Required for Email)
+BREVO_API_KEY=your_brevo_api_key
+BREVO_SENDER_EMAIL=noreply@yourdomain.com
+BREVO_SENDER_NAME=Kachingko
 
 # JWT Configuration
 JWT_SECRET=your_super_secret_jwt_key

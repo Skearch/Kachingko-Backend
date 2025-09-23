@@ -13,6 +13,7 @@ class App {
         this.port = process.env.PORT || 3000;
         this.databaseConnection = new DatabaseConnection();
         this.setupMiddleware();
+        this.setupCleanupInterval();
     }
 
     setupMiddleware() {
@@ -27,6 +28,15 @@ class App {
             });
             next();
         });
+    }
+
+    setupCleanupInterval() {
+        const TwilioService = require('./utils/TwilioService');
+        const twilioService = new TwilioService();
+        
+        setInterval(() => {
+            twilioService.cleanupExpiredCodes();
+        }, 10 * 60 * 1000);
     }
 
     async initialize() {
