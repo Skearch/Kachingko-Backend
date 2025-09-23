@@ -11,23 +11,19 @@ class TwilioService extends BaseService {
         this.verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
         this.client = twilio(this.accountSid, this.authToken);
 
-        this.brevoApiKey = process.env.BREVO_API_KEY;
-        this.senderEmail = process.env.BREVO_SENDER_EMAIL;
-        this.senderName = process.env.BREVO_SENDER_NAME;
-
         try {
             this.emailTransporter = nodemailer.createTransport({
-                host: 'smtp-relay.brevo.com',
-                port: 587,
-                secure: false,
+                host: process.env.SMTP_HOST,
+                port: process.env.SMTP_PORT,
+                secure: process.env.SMTP_SECURE === 'true',
                 auth: {
-                    user: this.senderEmail,
-                    pass: this.brevoApiKey
+                    user: process.env.SMTP_USER,
+                    pass: process.env.SMTP_PASS
                 }
             });
-            this.logInfo('Brevo SMTP client initialized successfully');
+            this.logInfo('SMTP client initialized successfully');
         } catch (error) {
-            this.logError('Failed to initialize Brevo SMTP client', error);
+            this.logError('Failed to initialize SMTP client', error);
             throw error;
         }
 
@@ -81,7 +77,7 @@ class TwilioService extends BaseService {
             this.emailCodes.set(to, { code, expiresAt, attempts: 0 });
 
             const mailOptions = {
-                from: `${this.senderName} <${this.senderEmail}>`,
+                from: process.env.SMTP_FROM,
                 to: to,
                 subject: 'Your Kachingko Verification Code',
                 html: `

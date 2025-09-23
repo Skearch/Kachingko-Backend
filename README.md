@@ -1,7 +1,7 @@
 # Features
 - Philippine phone number validation and normalization
 - SMS OTP verification via Twilio
-- Email verification with OTP via Brevo (formerly Sendinblue)
+- Email verification with OTP via Brevo SMTP (Nodemailer)
 - PIN-based authentication with JWT tokens
 - Secure email change process with dual verification
 - SQLite database with Sequelize ORM
@@ -30,10 +30,13 @@ TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_VERIFY_SERVICE_SID=your_verify_service_sid
 
-# Brevo Configuration (Required for Email)
-BREVO_API_KEY=your_brevo_api_key
-BREVO_SENDER_EMAIL=noreply@yourdomain.com
-BREVO_SENDER_NAME=Kachingko
+# Brevo SMTP Configuration (Required for Email)
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your_brevo_smtp_login   # e.g. 8d520b002@smtp-brevo.com
+SMTP_PASS=your_brevo_smtp_key     # e.g. xsmtpsib-...
+SMTP_FROM=Kachingko <your_verified_sender@email.com>
 
 # JWT Configuration
 JWT_SECRET=your_super_secret_jwt_key
@@ -44,6 +47,11 @@ LOG_LEVEL=INFO
 LOG_LOCALE=en-PH
 LOG_TIMEZONE=Asia/Manila
 ```
+
+**Notes:**
+- `SMTP_USER` is your Brevo SMTP login (not your sender email).
+- `SMTP_PASS` is your Brevo SMTP key (from the Brevo dashboard).
+- `SMTP_FROM` should be a verified sender email in Brevo, e.g. `Kachingko <skearch.dev@gmail.com>`.
 
 ## Phone Number Format
 All formats are normalized to `+639XXXXXXXXX` internally.
@@ -56,7 +64,6 @@ All formats are normalized to `+639XXXXXXXXX` internally.
 ```http
 GET /api/accounts/exists/09123456789
 ```
-
 **Response:**
 ```json
 {
@@ -75,7 +82,6 @@ Content-Type: application/json
   "phoneNumber": "+639123456789"
 }
 ```
-
 **Response:**
 ```json
 {
@@ -98,7 +104,6 @@ Content-Type: application/json
   "code": "123456"
 }
 ```
-
 **Response:**
 ```json
 {
@@ -118,7 +123,6 @@ Content-Type: application/json
   "pin": "123456"
 }
 ```
-
 **Response:**
 ```json
 {
@@ -151,7 +155,6 @@ Content-Type: application/json
   "pin": "123456"
 }
 ```
-
 **Response:**
 ```json
 {
@@ -211,7 +214,6 @@ Content-Type: application/json
   "email": "newemail@example.com"
 }
 ```
-
 **Response:**
 ```json
 {
@@ -245,7 +247,6 @@ Content-Type: application/json
   "code": "123456"
 }
 ```
-
 **Response:**
 ```json
 {
@@ -268,7 +269,6 @@ Content-Type: application/json
   "code": "789012"
 }
 ```
-
 **Response:**
 ```json
 {
@@ -336,7 +336,7 @@ All protected endpoints require `Authorization: Bearer <jwt_token>` header.
 
 **`POST /api/accounts/request-email-change`**
 - **Description:** Initiate secure email change process
-- **Required:** `email` (new email address) in request body
+- **Required:** `phoneNumber`, `email` in request body
 - **Returns:** Instructions for next verification step
 
 **`POST /api/accounts/verify-email-change-sms`**
@@ -348,7 +348,6 @@ All protected endpoints require `Authorization: Bearer <jwt_token>` header.
 - **Description:** Complete email change by verifying new email code
 - **Required:** `phoneNumber`, `code` in request body
 - **Note:** Final step - updates email address on success
-
 
 ## Authentication
 
