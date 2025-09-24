@@ -4,10 +4,6 @@ const nodemailer = require('nodemailer');
 class BrevoService extends BaseService {
     constructor() {
         super();
-        this.smsService = new SemaphoreService();
-        this.emailService = new BrevoService();
-        this.jwtService = new JwtService();
-
         this.transporter = this.createTransporter();
         this.fromEmail = process.env.SMTP_FROM;
 
@@ -17,7 +13,7 @@ class BrevoService extends BaseService {
     }
 
     createTransporter() {
-        return nodemailer.createTransporter({
+        return nodemailer.createTransport({
             host: process.env.SMTP_HOST,
             port: parseInt(process.env.SMTP_PORT) || 587,
             secure: process.env.SMTP_SECURE === 'true',
@@ -41,7 +37,7 @@ class BrevoService extends BaseService {
                 to: to,
                 subject: subject,
                 html: htmlContent,
-                text: textContent || htmlContent.replace(/<[^>]*>/g, '') 
+                text: textContent || htmlContent.replace(/<[^>]*>/g, '')
             };
 
             const result = await this.transporter.sendMail(mailOptions);
