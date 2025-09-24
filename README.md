@@ -1,21 +1,27 @@
-# Features
+## Features
 - Philippine phone number validation and normalization
-- SMS OTP verification via Twilio
-- Email verification with OTP via Brevo SMTP (Nodemailer)
+- SMS OTP verification via Semaphore (Philippines-optimized)
+- Email verification with OTP via Brevo SMTP
 - PIN-based authentication with JWT tokens
-- Secure email change process with dual verification
+- Secure email change process with dual verification (SMS + Email)
 - Duplicate request protection middleware
 - SQLite database with Sequelize ORM
-- Comprehensive logging system
+- Comprehensive logging system with Philippine timezone
 - Robust error handling and validation
-- Memory-based email code management with cleanup
+- Memory-based OTP code management with automatic cleanup
 - Automatic expired code cleanup every 10 minutes
 
 ## Quick Start
 
 ```bash
+# Install dependencies
 npm install
+
+# Copy environment file
 cp .env.example .env
+
+# Configure your .env file (see below)
+# Start development server
 npm run dev
 ```
 
@@ -25,54 +31,61 @@ Create a `.env` file with the following variables:
 
 ```env
 # Server Configuration
-PORT=3000
+PORT=20394
 NODE_ENV=development
 
-# Twilio Configuration (Required for SMS)
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_VERIFY_SERVICE_SID=your_verify_service_sid
+# Semaphore SMS Configuration (Required for SMS OTP)
+SEMAPHORE_API_KEY=your_semaphore_api_key
+SEMAPHORE_SENDER_NAME=KACHINGKO
 
-# Brevo SMTP Configuration (Required for Email)
+# Brevo SMTP Configuration (Required for Email OTP)
 SMTP_HOST=smtp-relay.brevo.com
 SMTP_PORT=587
 SMTP_SECURE=false
-SMTP_USER=your_brevo_smtp_login   # e.g. 8d520b002@smtp-brevo.com
-SMTP_PASS=your_brevo_smtp_key     # e.g. xsmtpsib-...
+SMTP_USER=your_brevo_smtp_login   # e.g. 8d520b004@smtp-brevo.com
+SMTP_PASS=your_brevo_smtp_key     # e.g. xBD740p26vJjmgyd
 SMTP_FROM=Kachingko <your_verified_sender@email.com>
 
 # JWT Configuration
 JWT_SECRET=your_super_secret_jwt_key
-JWT_EXPIRES_IN=24h
+JWT_EXPIRES_IN=1h
 
-# Logging Configuration
+# Logging Configuration (Philippine defaults)
 LOG_LEVEL=INFO
 LOG_LOCALE=en-PH
 LOG_TIMEZONE=Asia/Manila
 ```
 
+## Service Providers
+- **SMS Service**: Semaphore
+- **Email Service**: Brevo
+
 ## Phone Number Format
-All formats are normalized to `+639XXXXXXXXX` internally.
+All formats are automatically normalized to `+639XXXXXXXXX` internally:
+- `09123456789` → `+639123456789`
+- `639123456789` → `+639123456789` 
+- `+639123456789` → `+639123456789` (unchanged)
 
 ## Security Features
 
 ### Duplicate Request Protection
-All sensitive endpoints are protected against duplicate requests to prevent race conditions:
+All sensitive endpoints are protected against duplicate requests:
 - **Email verification processes**: Prevents same code from being processed simultaneously
-- **Account creation**: Prevents duplicate account creation attempts
+- **Account creation**: Prevents duplicate account creation attempts  
 - **Login attempts**: Rate limits rapid login attempts
 - **SMS/Email sending**: Prevents spam verification messages
 
 ### Rate Limiting
 - **SMS verification**: 1 request per minute per phone number
 - **Email verification**: 1 request per minute per email
-- **Failed verification attempts**: 5 attempts before code reset required
+- **Failed verification attempts**: Maximum 3 attempts per OTP code
 - **Duplicate requests**: Returns HTTP 429 with clear error message
 
 ### Memory Management
-- **Email codes**: Stored in memory with 5-minute expiration
+- **SMS OTP codes**: 5-minute expiration, stored in memory
+- **Email OTP codes**: 5-minute expiration, stored in memory
 - **Automatic cleanup**: Expired codes removed every 10 minutes
-- **Attempt limiting**: Maximum 3 attempts per email code
+- **Attempt limiting**: Maximum 3 attempts per code before deletion
 
 ## Complete API Flow
 
@@ -106,8 +119,9 @@ Content-Type: application/json
   "success": true,
   "message": "Verification code sent",
   "data": {
-    "sid": "verification_sid",
-    "status": "pending"
+    "status": "pending",
+    "to": "+639123456789",
+    "messageId": "semaphore_message_id"
   }
 }
 ```
@@ -177,7 +191,7 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "Login successful",
+  "message": "Login successful", 
   "data": {
     "account": { /* account data */ },
     "token": "jwt_token_here",
@@ -204,6 +218,18 @@ Content-Type: application/json
 POST /api/accounts/send-email-verification
 Authorization: Bearer <jwt_token>
 ```
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email verification sent",
+  "data": {
+    "status": "pending",
+    "to": "user@example.com", 
+    "messageId": "email_message_id"
+  }
+}
+```
 
 #### Verify Email
 ```http
@@ -213,6 +239,14 @@ Content-Type: application/json
 
 {
   "code": "123456"
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email verification completed",
+  "data": { "verified": true }
 }
 ```
 
@@ -228,16 +262,6 @@ Content-Type: application/json
 
 {
   "email": "newemail@example.com"
-}
-```
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Email change request initiated",
-  "data": {
-    "message": "Email change requested. SMS verification required first."
-  }
 }
 ```
 
@@ -261,16 +285,6 @@ Content-Type: application/json
   "code": "123456"
 }
 ```
-**Response:**
-```json
-{
-  "success": true,
-  "message": "SMS verification completed",
-  "data": {
-    "message": "SMS verified successfully. Email verification code sent to new email address."
-  }
-}
-```
 
 #### Step 4: Verify New Email Code
 ```http
@@ -282,129 +296,69 @@ Content-Type: application/json
   "code": "789012"
 }
 ```
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Email change completed",
-  "data": {
-    "message": "Email changed successfully!",
-    "newEmail": "newemail@example.com"
-  }
-}
-```
 
 ## API Endpoints Reference
 
 ### Public Endpoints (No Authentication Required)
 
-**`GET /api/accounts/exists/:phone`**
-- **Description:** Check if an account exists for a given phone number
-- **Required:** `phone` parameter in URL
-- **Example:** `GET /api/accounts/exists/09123456789`
-
-**`POST /api/accounts/send-verification`**
-- **Description:** Send SMS OTP verification code
-- **Required:** `phoneNumber` in request body
-- **Rate Limited:** 1 request per minute per phone number
-- **Duplicate Protection:** Prevents spam SMS sending
-
-**`POST /api/accounts/verify-code`**
-- **Description:** Verify SMS OTP code
-- **Required:** `phoneNumber`, `code` in request body
-- **Duplicate Protection:** Prevents same code from being processed twice
-
-**`POST /api/accounts/create`**
-- **Description:** Create a new account after SMS verification
-- **Required:** `phoneNumber`, `pin` (6 digits) in request body
-- **Returns:** Account data and JWT token
-- **Duplicate Protection:** Prevents duplicate account creation
-
-**`POST /api/accounts/login`**
-- **Description:** Login with phone number and PIN
-- **Required:** `phoneNumber`, `pin` (6 digits) in request body
-- **Returns:** Account data and JWT token
-- **Duplicate Protection:** Rate limits rapid login attempts
+| Endpoint | Method | Description | Rate Limited |
+|----------|--------|-------------|--------------|
+| `/api/accounts/exists/:phone` | GET | Check if account exists | ❌ |
+| `/api/accounts/send-verification` | POST | Send SMS OTP via Semaphore | ✅ (1/min) |
+| `/api/accounts/verify-code` | POST | Verify SMS OTP code | ✅ |
+| `/api/accounts/create` | POST | Create new account | ✅ |
+| `/api/accounts/login` | POST | Login with PIN | ✅ |
 
 ### Protected Endpoints (JWT Authentication Required)
 
-All protected endpoints require `Authorization: Bearer <jwt_token>` header.
+| Endpoint | Method | Description | Rate Limited |
+|----------|--------|-------------|--------------|
+| `/api/accounts/profile` | GET | Get user profile | ❌ |
+| `/api/accounts/add-email` | POST | Add/update email | ✅ |
+| `/api/accounts/send-email-verification` | POST | Send email OTP via Brevo | ✅ (1/min) |
+| `/api/accounts/verify-email` | POST | Verify email OTP | ✅ |
+| `/api/accounts/request-email-change` | POST | Request secure email change | ✅ |
+| `/api/accounts/verify-email-change-sms` | POST | Verify SMS for email change | ✅ |
+| `/api/accounts/verify-email-change-email` | POST | Complete email change | ✅ |
 
-**`GET /api/accounts/profile`** 
-- **Description:** Get authenticated user's profile information
-- **Required:** JWT token only
-- **Returns:** Complete account information
+## Email Templates
 
-**`POST /api/accounts/add-email`**
-- **Description:** Add or update email address for account
-- **Required:** `email` in request body
-- **Note:** Phone number extracted from JWT token
-- **Duplicate Protection:** Prevents duplicate email addition requests
-
-**`POST /api/accounts/send-email-verification`**
-- **Description:** Send email OTP verification code to account's email
-- **Required:** JWT token only
-- **Rate Limited:** 1 request per minute per email
-- **Prerequisites:** Account must have email address
-- **Duplicate Protection:** Prevents spam email sending
-
-**`POST /api/accounts/verify-email`**
-- **Description:** Verify email OTP code
-- **Required:** `code` in request body
-- **Note:** Marks email as verified on success
-- **Duplicate Protection:** Prevents same code from being processed twice
-
-**`POST /api/accounts/request-email-change`**
-- **Description:** Initiate secure email change process
-- **Required:** `email` in request body
-- **Returns:** Instructions for next verification step
-- **Duplicate Protection:** Prevents duplicate email change requests
-
-**`POST /api/accounts/verify-email-change-sms`**
-- **Description:** Verify SMS code for email change process
-- **Required:** `code` in request body
-- **Note:** Must complete this before email verification step
-- **Duplicate Protection:** Prevents duplicate SMS verification attempts
-
-**`POST /api/accounts/verify-email-change-email`**
-- **Description:** Complete email change by verifying new email code
-- **Required:** `code` in request body
-- **Note:** Final step - updates email address on success
-- **Duplicate Protection:** Prevents race conditions during final step
+The system sends professional HTML emails with:
+- **OTP Verification**: Styled verification code emails
+- **Welcome Messages**: Sent after successful email verification
+- **Security Warnings**: Clear instructions about code security
+- **Responsive Design**: Mobile-friendly email layouts
 
 ## Error Handling
 
-### Duplicate Request Response
-When duplicate requests are detected, you'll receive:
+### Common HTTP Status Codes
 
+| Status | Description | When It Occurs |
+|--------|-------------|----------------|
+| `200` | Success | Request completed successfully |
+| `400` | Bad Request | Invalid input data or format |
+| `401` | Unauthorized | Missing or invalid JWT token |
+| `409` | Conflict | Account already exists |
+| `429` | Too Many Requests | Duplicate request detected |
+| `500` | Internal Server Error | Unexpected server error |
+
+### Sample Error Responses
+
+**Duplicate Request:**
 ```json
 {
   "success": false,
   "message": "Duplicate request detected. Please wait."
 }
 ```
-**HTTP Status:** `429 Too Many Requests`
 
-### Common Error Responses
-
-**Authentication Failed:**
+**Invalid Phone Number:**
 ```json
 {
   "success": false,
-  "message": "Authentication failed"
+  "message": "Invalid Philippines phone number format. Use format: +639XXXXXXXXX, 09XXXXXXXXX, or 639XXXXXXXXX"
 }
 ```
-**HTTP Status:** `401 Unauthorized`
-
-**Validation Error:**
-```json
-{
-  "success": false,
-  "message": "Validation error",
-  "errors": ["PIN must be exactly 6 digits"]
-}
-```
-**HTTP Status:** `400 Bad Request`
 
 **Account Already Exists:**
 ```json
@@ -413,34 +367,35 @@ When duplicate requests are detected, you'll receive:
   "message": "Account already exists with this phone number"
 }
 ```
-**HTTP Status:** `409 Conflict`
 
 ## Authentication
 
-All protected endpoints require a JWT token in the Authorization header:
+All protected endpoints require a JWT token:
 
 ```http
 Authorization: Bearer <your_jwt_token>
 ```
 
-Tokens are returned upon successful login or account creation and are valid for 24 hours by default.
+- **Token Duration**: 1 hour (configurable via `JWT_EXPIRES_IN`)
+- **Token Payload**: Contains phone number, account ID, verification status
+- **Token Security**: Uses strong secret key for signing
 
 ## Account Verification Levels
 
-1. **SMS Verified**: Phone number verified via SMS OTP
-2. **Email Verified**: Email address verified via email OTP
-3. **Fully Verified**: Both SMS and email verified + KYC completed
+1. **SMS Verified**: ✅ Phone number verified via Semaphore SMS
+2. **Email Verified**: ✅ Email address verified via Brevo email  
+3. **Fully Verified**: ✅ Both SMS and email verified + KYC completed
 
 ## Response Format
 
-All API responses follow this consistent format:
+All API responses follow this consistent structure:
 
 ```json
 {
   "success": boolean,
-  "message": "string",
+  "message": "descriptive message",
   "data": object | null,
-  "error": "string | null (only on errors)"
+  "error": "error details (only on failures)"
 }
 ```
 
@@ -450,29 +405,40 @@ All API responses follow this consistent format:
 
 ```bash
 npm start      # Production server
-npm run dev    # Development with nodemon
+npm run dev    # Development with nodemon (auto-reload)
+npm test       # Run tests (not implemented yet)
 ```
 
 ### Database Schema
 
-The `accounts` table includes:
+SQLite database with the following `accounts` table structure:
 
 ```sql
-- id (PRIMARY KEY)
-- phoneNumber (UNIQUE, NOT NULL)
-- pin (NOT NULL, 6 digits)
-- email (NULLABLE)
-- pendingEmail (NULLABLE)
-- emailChangeVerificationStep (ENUM: none, sms_pending, email_pending, completed)
-- smsVerified (BOOLEAN)
-- emailVerified (BOOLEAN)
-- fullyVerified (BOOLEAN)
-- kycStatus (ENUM: not_submitted, pending, approved, rejected)
-- verificationAttempts (INTEGER)
-- emailVerificationAttempts (INTEGER)
-- lastVerificationSent (TIMESTAMP)
-- lastEmailVerificationSent (TIMESTAMP)
-- kycSubmittedAt (TIMESTAMP)
-- createdAt (TIMESTAMP)
-- updatedAt (TIMESTAMP)
+CREATE TABLE accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phoneNumber VARCHAR(255) UNIQUE NOT NULL,
+  pin VARCHAR(6) NOT NULL,
+  email VARCHAR(255) NULL,
+  pendingEmail VARCHAR(255) NULL,
+  emailChangeVerificationStep VARCHAR(50) DEFAULT 'none',
+  smsVerified BOOLEAN DEFAULT false,
+  emailVerified BOOLEAN DEFAULT false,
+  fullyVerified BOOLEAN DEFAULT false,
+  kycStatus VARCHAR(50) DEFAULT 'not_submitted',
+  verificationAttempts INTEGER DEFAULT 0,
+  emailVerificationAttempts INTEGER DEFAULT 0,
+  lastVerificationSent DATETIME NULL,
+  lastEmailVerificationSent DATETIME NULL,
+  kycSubmittedAt DATETIME NULL,
+  createdAt DATETIME NOT NULL,
+  updatedAt DATETIME NOT NULL
+);
 ```
+
+### Memory Management
+
+The system uses in-memory storage for OTP codes:
+- **SMS codes**: Stored in `SemaphoreService.otpCodes` Map
+- **Email codes**: Stored in `BrevoService.emailCodes` Map
+- **Automatic cleanup**: Every 10 minutes via cleanup interval
+- **Expiration**: 5 minutes for all OTP codes

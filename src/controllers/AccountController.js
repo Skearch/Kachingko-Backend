@@ -1,13 +1,14 @@
 const BaseController = require('./BaseController');
 const Account = require('../models/Account');
-const TwilioService = require('../utils/TwilioService');
+const SemaphoreService = require('../utils/SemaphoreService');
+const BrevoService = require('../utils/BrevoService');
 const JwtService = require('../utils/JwtService');
-
 
 class AccountController extends BaseController {
     constructor() {
         super();
-        this.twilioService = new TwilioService();
+        this.smsService = new SemaphoreService();
+        this.emailService = new BrevoService();
         this.jwtService = new JwtService();
     }
 
@@ -31,7 +32,7 @@ class AccountController extends BaseController {
                 throw new Error(`Please wait ${secondsLeft} seconds before requesting another code`);
             }
 
-            const result = await this.twilioService.sendSms(normalizedPhone);
+            const result = await this.smsService.sendOTP(normalizedPhone);
 
             if (account) {
                 account.lastVerificationSent = new Date();
@@ -47,7 +48,7 @@ class AccountController extends BaseController {
     async verifyCode(phoneNumber, code) {
         try {
             const normalizedPhone = Account.normalizePhoneNumber(phoneNumber);
-            const verification = await this.twilioService.checkVerification(normalizedPhone, code);
+            const verification = await this.smsService.verifyOTP(normalizedPhone, code);
             return verification.status === 'approved';
         } catch (error) {
             throw this.handleError(error, 'Failed to verify code');
@@ -136,10 +137,12 @@ class AccountController extends BaseController {
             }
 
             if (!account.canSendEmailVerification()) {
-                throw new Error('Please wait before requesting another email verification code');
+                const timeLeft = 60000 - (new Date() - account.lastEmailVerificationSent);
+                const secondsLeft = Math.ceil(timeLeft / 1000);
+                throw new Error(`Please wait ${secondsLeft} seconds before requesting another email verification code`);
             }
 
-            const result = await this.twilioService.sendEmail(account.email);
+            const result = await this.emailService.sendEmailOTP(account.email);
             account.lastEmailVerificationSent = new Date();
             await account.save();
 
@@ -192,14 +195,28 @@ class AccountController extends BaseController {
                 throw new Error('Too many email verification attempts. Please request a new code.');
             }
 
-            const verification = await this.twilioService.checkEmailVerification(account.email, code);
+            const verification = await this.emailService.verifyEmailOTP(account.email, code);
 
             if (verification.status === 'approved') {
                 await account.markEmailAsVerified();
+
+                try {
+                    await this.emailService.sendWelcomeEmail(account.email, account.phoneNumber);
+                } catch (welcomeError) {
+                    this.logError('Failed to send welcome email', welcomeError);
+                }
+
                 return true;
             } else {
                 account.emailVerificationAttempts += 1;
                 await account.save();
+
+                if (verification.status === 'failed') {
+                    throw new Error(verification.message);
+                } else if (verification.status === 'expired') {
+                    throw new Error('Verification code has expired. Please request a new one.');
+                }
+
                 return false;
             }
         } catch (error) {
@@ -239,7 +256,7 @@ class AccountController extends BaseController {
                 throw new Error('No email change request pending SMS verification');
             }
 
-            const verification = await this.twilioService.checkVerification(phoneNumber, code);
+            const verification = await this.smsService.verifyOTP(phoneNumber, code);
             if (verification.status !== 'approved') {
                 throw new Error('Invalid SMS verification code');
             }
@@ -247,12 +264,12 @@ class AccountController extends BaseController {
             account.emailChangeVerificationStep = 'email_pending';
             await account.save();
 
-            await this.twilioService.sendEmail(account.pendingEmail);
+            await this.emailService.sendEmailOTP(account.pendingEmail);
             account.lastEmailVerificationSent = new Date();
             await account.save();
 
-            return { 
-                message: 'SMS verified successfully. Email verification code sent to new email address.' 
+            return {
+                message: 'SMS verified successfully. Email verification code sent to new email address.'
             };
         } catch (error) {
             throw this.handleError(error, 'Failed to verify SMS for email change');
@@ -266,11 +283,11 @@ class AccountController extends BaseController {
                 throw new Error('Account not found');
             }
 
-            if (account.emailChangeVerificationStep === 'completed' || 
+            if (account.emailChangeVerificationStep === 'completed' ||
                 account.emailChangeVerificationStep === 'none') {
-                return { 
+                return {
                     message: 'Email change already completed!',
-                    newEmail: account.email 
+                    newEmail: account.email
                 };
             }
 
@@ -278,13 +295,10 @@ class AccountController extends BaseController {
                 throw new Error('Email verification not ready. Complete SMS verification first.');
             }
 
-            const verification = await this.twilioService.checkEmailVerification(account.pendingEmail, code);
+            const verification = await this.emailService.verifyEmailOTP(account.pendingEmail, code);
             if (verification.status !== 'approved') {
-                throw new Error('Invalid email verification code');
+                throw new Error(verification.message || 'Invalid email verification code');
             }
-
-            account.emailChangeVerificationStep = 'completed';
-            await account.save();
 
             account.email = account.pendingEmail;
             account.pendingEmail = null;
@@ -293,9 +307,9 @@ class AccountController extends BaseController {
             account.emailVerificationAttempts = 0;
             await account.save();
 
-            return { 
+            return {
                 message: 'Email changed successfully!',
-                newEmail: account.email 
+                newEmail: account.email
             };
         } catch (error) {
             throw this.handleError(error, 'Failed to verify new email for email change');

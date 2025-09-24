@@ -31,11 +31,15 @@ class App {
 
     setupCleanupInterval() {
         try {
-            const TwilioService = require('./utils/TwilioService');
-            const twilioService = new TwilioService();
+            const SemaphoreService = require('./utils/SemaphoreService');
+            const BrevoService = require('./utils/BrevoService');
+
+            const smsService = new SemaphoreService();
+            const emailService = new BrevoService();
 
             setInterval(() => {
-                twilioService.cleanupExpiredCodes();
+                smsService.cleanupExpiredCodes();
+                emailService.cleanupExpiredCodes();
             }, 10 * 60 * 1000);
 
             logger.info('Cleanup interval setup successfully');
